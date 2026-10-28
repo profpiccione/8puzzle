@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>A* sul gioco dell'8</title>
+<style>
+:root{--bg:#f3f1ea;--fg:#22211e;--mut:#77746b;--card:#fffefa;--bd:#d6d2c4;--open:#d4e4fb;--openbd:#3a78d6;--closed:#e6e3d9;--closedbd:#a9a597;--cur:#ffd58f;--curbd:#d97a00;--path:#c4ead0;--pathbd:#278a45;--tile:#2b4a6f;--tilefg:#fff;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#17181b;--fg:#ecebe6;--mut:#9a978d;--card:#212327;--bd:#3a3c42;--open:#22395c;--openbd:#6aa2f0;--closed:#2d2f34;--closedbd:#5b5d63;--cur:#6b4713;--curbd:#ffb04a;--path:#1f4a2f;--pathbd:#59c47c;--tile:#8fb4e3;--tilefg:#14202e}}
+:root[data-theme="dark"]{--bg:#17181b;--fg:#ecebe6;--mut:#9a978d;--card:#212327;--bd:#3a3c42;--open:#22395c;--openbd:#6aa2f0;--closed:#2d2f34;--closedbd:#5b5d63;--cur:#6b4713;--curbd:#ffb04a;--path:#1f4a2f;--pathbd:#59c47c;--tile:#8fb4e3;--tilefg:#14202e}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.45 "Avenir Next",Avenir,"Segoe UI",system-ui,sans-serif}
+.app{display:grid;grid-template-columns:300px 1fr;gap:16px;padding:16px;max-width:1500px;margin:auto}
+@media(max-width:800px){.app{grid-template-columns:1fr}}
+h1{font:700 22px/1.2 Georgia,"Times New Roman",serif;margin:0 0 4px}
+p.sub{margin:0 0 12px;color:var(--mut);font-size:13px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px;margin-bottom:12px}
+.card h2{font-size:14px;margin:0 0 8px}
+.board{display:grid;grid-template-columns:repeat(3,64px);gap:5px;justify-content:center}
+.board button{width:64px;height:64px;font:700 26px Georgia,serif;border:0;border-radius:8px;background:var(--tile);color:var(--tilefg);cursor:pointer}
+.board button.e{background:transparent;border:2px dashed var(--bd);cursor:default}
+.row{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;align-items:center}
+button.b,select,input[type=text]{font:inherit;padding:6px 10px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--fg);cursor:pointer}
+button.b.p{background:var(--openbd);border-color:var(--openbd);color:#fff}
+button.b:disabled{opacity:.45;cursor:default}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--curbd);outline-offset:2px}
+input[type=text]{width:112px;letter-spacing:2px;font-family:ui-monospace,Menlo,monospace;cursor:text}
+label{font-size:13px;color:var(--mut)}
+.stats{display:grid;grid-template-columns:1fr auto;gap:2px 10px;font-size:13px}
+.stats b{text-align:right}
+#msg{font-size:13px;min-height:2.6em;margin-top:8px}
+.leg{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--mut)}
+.leg i{display:inline-block;width:12px;height:12px;border-radius:3px;border:2px solid;vertical-align:-2px;margin-right:4px}
+#treeWrap{background:var(--card);border:1px solid var(--bd);border-radius:10px;overflow:auto;height:calc(100vh - 32px);min-height:420px}
+@media(max-width:800px){#treeWrap{height:70vh}}
+svg text{font-family:"Avenir Next",Avenir,system-ui,sans-serif;fill:var(--fg)}
+.n rect.box{stroke-width:2}
+.n.open rect.box{fill:var(--open);stroke:var(--openbd)}
+.n.closed rect.box{fill:var(--closed);stroke:var(--closedbd)}
+.n.dead{opacity:.4}.n.dead rect.box{fill:var(--closed);stroke:var(--closedbd);stroke-dasharray:4 3}
+.n.path rect.box{fill:var(--path);stroke:var(--pathbd)}
+.n.cur rect.box{fill:var(--cur);stroke:var(--curbd);stroke-width:3}
+.edge{stroke:var(--closedbd);stroke-width:1.5;fill:none}.edge.path{stroke:var(--pathbd);stroke-width:3}
+</style>
+</head>
+<body>
+<div class="app">
+<aside>
+  <h1>A* sul gioco dell'8</h1>
+  <p class="sub">f(n) = g(n) + h(n). Ad ogni passo viene espanso il nodo di frontiera con f minore.</p>
+  <div class="card">
+    <h2>Configurazione iniziale</h2>
+    <div class="board" id="board" aria-label="Griglia iniziale"></div>
+    <div class="row">
+      <input type="text" id="txt" maxlength="9" aria-label="Configurazione come 9 cifre, 0 = vuoto">
+      <button class="b" id="apply">Applica</button>
+      <button class="b" id="rnd">Casuale</button>
+    </div>
+    <p class="sub" style="margin:8px 0 0">Clicca una tessera accanto al vuoto per spostarla, oppure scrivi 9 cifre (0 = vuoto, es. 724506831). Obiettivo: 123 / 456 / 78_</p>
+  </div>
+  <div class="card">
+    <h2>Esecuzione</h2>
+    <div class="row" style="margin-top:0">
+      <label>Euristica <select id="heur"><option value="man">Distanza Manhattan</option><option value="mis">Tessere fuori posto</option><option value="zero">Nessuna (h = 0)</option></select></label>
+    </div>
+    <div class="row">
+      <button class="b p" id="step">Passo</button>
+      <button class="b" id="play">Avvia</button>
+      <button class="b" id="end">Fino alla fine</button>
+      <button class="b" id="reset">Riparti</button>
+    </div>
+    <div class="row"><label>Velocità <input type="range" id="spd" min="1" max="10" value="6"></label></div>
+    <div id="msg"></div>
+  </div>
+  <div class="card">
+    <h2>Statistiche</h2>
+    <div class="stats"><span>Nodi espansi</span><b id="sE">0</b><span>Nodi generati</span><b id="sG">1</b><span>In frontiera</span><b id="sO">1</b><span>Duplicati scartati</span><b id="sD">0</b><span>Lunghezza soluzione</span><b id="sL">–</b></div>
+  </div>
+  <div class="card leg">
+    <span><i style="border-color:var(--openbd);background:var(--open)"></i>frontiera</span>
+    <span><i style="border-color:var(--curbd);background:var(--cur)"></i>espanso ora</span>
+    <span><i style="border-color:var(--closedbd);background:var(--closed)"></i>già espanso</span>
+    <span><i style="border-color:var(--pathbd);background:var(--path)"></i>soluzione</span>
+    <span style="width:100%">Sotto ogni nodo: g + h = f. Nodi sbiaditi: stato raggiunto poi con un percorso migliore.</span>
+  </div>
+</aside>
+<main id="treeWrap"><svg id="tree"></svg></main>
+</div>
+<script>
+const GOAL="123456780",$=id=>document.getElementById(id);
+let start="724506831",N,open,best,cur,done,expanded,dups,timer=null,limitHit;
+const H={man:s=>{let d=0;for(let i=0;i<9;i++){const t=+s[i];if(!t)continue;d+=Math.abs((i/3|0)-((t-1)/3|0))+Math.abs(i%3-(t-1)%3)}return d},
+mis:s=>{let d=0;for(let i=0;i<9;i++)if(s[i]!=="0"&&s[i]!==GOAL[i])d++;return d},zero:()=>0};
+function nbrs(s){const z=s.indexOf("0"),r=z/3|0,c=z%3,o=[];
+for(const[dr,dc]of[[-1,0],[1,0],[0,-1],[0,1]]){const nr=r+dr,nc=c+dc;if(nr<0||nr>2||nc<0||nc>2)continue;
+const a=s.split(""),j=nr*3+nc;[a[z],a[j]]=[a[j],a[z]];o.push(a.join(""))}return o}
+function solvable(s){const a=s.split("").filter(x=>x!=="0");let inv=0;for(let i=0;i<8;i++)for(let j=i+1;j<8;j++)if(a[i]>a[j])inv++;return inv%2===0}
+function valid(s){return /^[0-8]{9}$/.test(s)&&new Set(s).size===9}
+function mk(s,g,p){const n={id:N.length,s,g,h:H[$("heur").value](s),p,ch:[],st:"open"};N.push(n);if(p!==null)N[p].ch.push(n.id);return n}
+function init(){stop();N=[];open=[];best={};cur=null;done=false;expanded=0;dups=0;limitHit=false;
+const r=mk(start,0,null);open.push(r.id);best[start]=0;
+$("msg").textContent=solvable(start)?"Premi «Passo» per espandere il primo nodo.":"Questa configurazione non è risolvibile (numero di inversioni dispari).";
+drawBoard();render(true)}
+function step(){if(done||limitHit||!solvable(start))return false;
+let bi=-1,b=null;for(let i=0;i<open.length;i++){const n=N[open[i]];if(n.dead)continue;
+if(!b||n.g+n.h<b.g+b.h||(n.g+n.h===b.g+b.h&&n.h<b.h)){b=n;bi=i}}
+if(!b){done=true;return false}
+open.splice(bi,1);if(cur!==null&&N[cur].st==="cur")N[cur].st="closed";
+b.st="cur";cur=b.id;expanded++;
+if(b.s===GOAL){done=true;let k=b.id,len=0;while(k!==null){N[k].path=true;if(N[k].p!==null)len++;k=N[k].p}
+$("sL").textContent=len;$("msg").textContent="Soluzione trovata in "+len+" mosse, espandendo "+expanded+" nodi.";render(false);return false}
+let added=0;
+for(const t of nbrs(b.s)){if(N[b.p]&&N[b.p].s===t&&false)continue;const g=b.g+1;
+if(best[t]!==undefined&&best[t]<=g){dups++;continue}
+for(const i of open){if(N[i].s===t)N[i].dead=true;}
+best[t]=g;open=open.filter(i=>!N[i].dead);const c=mk(t,g,b.id);open.push(c.id);added++}
+$("msg").textContent="Espanso (g="+b.g+", h="+b.h+", f="+(b.g+b.h)+"): "+added+" nuovi figli.";
+if(N.length>1200){limitHit=true;$("msg").textContent="Albero troppo grande: mi fermo a "+N.length+" nodi. Prova una configurazione più semplice.";}
+render(false);return !limitHit}
+function stop(){if(timer){clearInterval(timer);timer=null}$("play").textContent="Avvia"}
+$("play").onclick=()=>{if(timer){stop();return}$("play").textContent="Pausa";
+const ms=[1200,900,700,500,350,250,160,100,60,30][$("spd").value-1];
+timer=setInterval(()=>{if(!step())stop()},ms)};
+$("spd").oninput=()=>{if(timer){stop();$("play").click()}};
+$("step").onclick=()=>{stop();step()};
+$("end").onclick=()=>{stop();let k=0;while(k++<3000&&step_quiet());render(false)};
+function step_quiet(){const m=$("msg");const r=step();return r}
+$("reset").onclick=init;$("heur").onchange=init;
+function drawBoard(){const b=$("board");b.innerHTML="";$("txt").value=start;
+for(let i=0;i<9;i++){const x=document.createElement("button"),v=start[i];
+if(v==="0"){x.className="e";x.setAttribute("aria-label","vuoto")}else{x.textContent=v;x.onclick=()=>{const z=start.indexOf("0");
+if(Math.abs((z/3|0)-(i/3|0))+Math.abs(z%3-i%3)===1){const a=start.split("");[a[z],a[i]]=[a[i],a[z]];start=a.join("");init()}}}
+b.appendChild(x)}}
+$("apply").onclick=()=>{const v=$("txt").value.trim();if(!valid(v)){$("msg").textContent="Inserisci le cifre da 0 a 8, ciascuna una sola volta.";return}start=v;init()};
+$("rnd").onclick=()=>{let s=GOAL,prev="";for(let i=0;i<40;i++){const o=nbrs(s).filter(x=>x!==prev);prev=s;s=o[Math.random()*o.length|0]}start=s;init()};
+const W=70,HH=108,BX=54;
+function render(first){
+$("sE").textContent=expanded;$("sG").textContent=N.length;$("sO").textContent=open.filter(i=>!N[i].dead).length;$("sD").textContent=dups;if(first)$("sL").textContent="–";
+let leaf=0,maxD=0;const pos=[];
+(function lay(id,d){const n=N[id];maxD=Math.max(maxD,d);
+if(!n.ch.length){pos[id]={x:leaf++,y:d};return}
+n.ch.forEach(c=>lay(c,d+1));pos[id]={x:(pos[n.ch[0]].x+pos[n.ch[n.ch.length-1]].x)/2,y:d}})(0,0);
+const w=Math.max(leaf*W+20,300),h=(maxD+1)*HH+10;
+let o="";
+for(const n of N){if(n.p===null)continue;const a=pos[n.p],b=pos[n.id];
+o+=`<path class="edge${n.path?" path":""}" d="M${a.x*W+10+BX/2},${a.y*HH+8+BX+14} C${a.x*W+10+BX/2},${(a.y+.5)*HH+20} ${b.x*W+10+BX/2},${(b.y-.2)*HH+40} ${b.x*W+10+BX/2},${b.y*HH+8}"/>`}
+for(const n of N){const p=pos[n.id],x=p.x*W+10,y=p.y*HH+8;
+const cls=n.dead?"dead":n.path?"path":n.st;
+o+=`<g class="n ${cls}"><rect class="box" x="${x}" y="${y}" width="${BX}" height="${BX}" rx="6"/>`;
+for(let i=0;i<9;i++){if(n.s[i]==="0")continue;o+=`<text x="${x+(i%3)*18+9}" y="${y+((i/3|0)*18)+14}" font-size="13" font-weight="700" text-anchor="middle">${n.s[i]}</text>`}
+o+=`<text x="${x+BX/2}" y="${y+BX+12}" font-size="11" text-anchor="middle">${n.g}+${n.h}=${n.g+n.h}</text></g>`}
+const svg=$("tree");svg.setAttribute("width",w);svg.setAttribute("height",h);svg.setAttribute("viewBox",`0 0 ${w} ${h}`);svg.innerHTML=o;
+const wr=$("treeWrap");
+if(cur!==null&&!first){const p=pos[cur];wr.scrollTo({left:p.x*W-wr.clientWidth/2+BX,top:p.y*HH-wr.clientHeight/2+BX,behavior:"smooth"})}else if(first){wr.scrollTo(0,0);wr.scrollLeft=(w-wr.clientWidth)/2}}
+init();
+</script>
+</body>
+</html>
